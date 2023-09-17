@@ -1,4 +1,4 @@
-# 🚀 التثبيت المتقدم
+# التثبيت المتقدم
 
 To install starship, you need to do two things:
 
@@ -15,7 +15,7 @@ There are so many platforms out there that they didn't fit into the main README.
 
 Head over to the [Chocolatey installation page](https://chocolatey.org/install) and follow the instructions to install Chocolatey.
 
-### Installation
+### التثبيت
 
 ```powershell
 choco install starship
@@ -29,15 +29,15 @@ choco install starship
 pkg install getconf
 ```
 
-### Installation
+### التثبيت
 
 ```sh
-sh -c "$(curl -fsSL https://starship.rs/install.sh)" -- --bin-dir /data/data/com.termux/files/usr/bin
+curl -sS https://starship.rs/install.sh | sh -s -- --bin-dir /data/data/com.termux/files/usr/bin
 ```
 
 ## [Funtoo Linux](https://www.funtoo.org/Welcome)
 
-### Installation
+### التثبيت
 
 On Funtoo Linux, starship can be installed from [core-kit](https://github.com/funtoo/core-kit/tree/1.4-release/app-shells/starship) via Portage:
 
@@ -63,7 +63,6 @@ Enable the `programs.starship` module in your `home.nix` file, and add your sett
 {
   programs.starship = {
     enable = true;
-    enableZshIntegration = true;
     # Configuration written to ~/.config/starship.toml
     settings = {
       # add_newline = false;

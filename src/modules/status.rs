@@ -1,12 +1,12 @@
 use std::string::ToString;
 
-use super::{Context, Module, RootModuleConfig};
+use super::{Context, Module, ModuleConfig};
 
 use crate::configs::status::StatusConfig;
 use crate::formatter::{string_formatter::StringFormatterError, StringFormatter};
 use crate::segment::Segment;
 
-type ExitCode = i64;
+type ExitCode = i32;
 type SignalNumber = u32;
 #[derive(PartialEq)]
 enum PipeStatusStatus<'a> {
@@ -17,7 +17,7 @@ enum PipeStatusStatus<'a> {
 
 /// Creates a module with the status of the last command
 ///
-/// Will display the status only if it is not 0
+/// Will display the status
 pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
     let mut module = context.new_module("status");
     let config = StatusConfig::try_load(module.config);
@@ -28,9 +28,9 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
         return None;
     };
 
-    let exit_code = context.properties.status_code.unwrap_or_default();
+    let exit_code = context.properties.status_code.as_deref().unwrap_or("0");
 
-    let pipestatus_status = match &context.pipestatus {
+    let pipestatus_status = match &context.properties.pipestatus {
         None => PipeStatusStatus::Disabled,
         Some(ps) => match ps.len() > 1 {
             true => PipeStatusStatus::Pipe(ps),
@@ -43,8 +43,9 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
         false => PipeStatusStatus::Disabled,
     };
 
-    // Exit code is zero and pipestatus is all zero or disabled/missing
-    if exit_code == 0
+    // Exit code is zero while success_symbol and pipestatus are all zero or disabled/missing
+    if exit_code == "0"
+        && config.success_symbol.is_empty()
         && (match pipestatus_status {
             PipeStatusStatus::Pipe(ps) => ps.iter().all(|s| s == "0"),
             _ => true,
@@ -53,36 +54,39 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
         return None;
     }
 
+    let segment_format = config.pipestatus_segment_format.unwrap_or(config.format);
+    let segment_format_with_separator = [segment_format, config.pipestatus_separator].join("");
+
     // Create pipestatus string
     let pipestatus = match pipestatus_status {
         PipeStatusStatus::Pipe(pipestatus) => pipestatus
             .iter()
-            .map(
-                |ec| match format_exit_code(ec.as_str(), config.format, None, &config, context) {
-                    Ok(segments) => segments
-                        .into_iter()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<String>>()
-                        .join(""),
-                    Err(_) => "".to_string(),
-                },
-            )
-            .collect::<Vec<String>>()
-            .join(config.pipestatus_separator),
-        _ => "".to_string(),
+            .enumerate()
+            .filter_map(|(i, ec)| {
+                format_exit_code(
+                    ec.as_str(),
+                    if i == pipestatus.len() - 1 {
+                        segment_format
+                    } else {
+                        &segment_format_with_separator
+                    },
+                    None,
+                    &config,
+                    context,
+                )
+                .ok()
+                .map(|segments| segments.into_iter().map(|s| s.to_string()))
+            })
+            .flatten()
+            .collect::<String>(),
+        _ => String::new(),
     };
 
     let main_format = match pipestatus_status {
         PipeStatusStatus::Pipe(_) => config.pipestatus_format,
         _ => config.format,
     };
-    let parsed = format_exit_code(
-        &exit_code.to_string(),
-        main_format,
-        Some(&pipestatus),
-        &config,
-        context,
-    );
+    let parsed = format_exit_code(exit_code, main_format, Some(&pipestatus), &config, context);
 
     module.set_segments(match parsed {
         Ok(segments) => segments,
@@ -101,18 +105,16 @@ fn format_exit_code<'a>(
     config: &'a StatusConfig,
     context: &'a Context,
 ) -> Result<Vec<Segment>, StringFormatterError> {
-    let exit_code_int: ExitCode = match exit_code.parse() {
-        Ok(i) => i,
+    // First, parse as i64 to accept both i32 or u32, then normalize to i32.
+    let exit_code_int: ExitCode = match exit_code.parse::<i64>() {
+        Ok(i) => i as ExitCode,
         Err(_) => {
             log::warn!("Error parsing exit_code string to int");
             return Ok(Vec::new());
         }
     };
 
-    let hex_status = exit_code
-        .parse::<i32>()
-        .ok()
-        .map(|code| format!("0x{:X}", code));
+    let hex_status = format!("0x{exit_code_int:X}");
 
     let common_meaning = status_common_meaning(exit_code_int);
 
@@ -121,8 +123,8 @@ fn format_exit_code<'a>(
         false => None,
     };
     let signal_number = raw_signal_number.map(|sn| sn.to_string());
-    let signal_name = raw_signal_number
-        .and_then(|sn| status_signal_name(sn).or_else(|| signal_number.as_deref()));
+    let signal_name =
+        raw_signal_number.and_then(|sn| status_signal_name(sn).or(signal_number.as_deref()));
 
     // If not a signal and not a common meaning, it should at least print the raw exit code number
     let maybe_exit_code_number = match common_meaning.is_none() && signal_name.is_none() {
@@ -156,7 +158,7 @@ fn format_exit_code<'a>(
             })
             .map(|variable| match variable {
                 "status" => Some(Ok(exit_code)),
-                "hex_status" => Ok(hex_status.as_deref().or(Some(exit_code))).transpose(),
+                "hex_status" => Some(Ok(hex_status.as_ref())),
                 "int" => Some(Ok(exit_code)),
                 "maybe_int" => Ok(maybe_exit_code_number).transpose(),
                 "common_meaning" => Ok(common_meaning).transpose(),
@@ -184,7 +186,7 @@ fn status_common_meaning(ex: ExitCode) -> Option<&'static str> {
         return None;
     }
     match ex {
-        0 => Some(""),
+        0 => Some(""), // SUCCESS can be defined by $success_symbol if the user wishes too.
         1 => Some("ERROR"),
         2 => Some("USAGE"),
         126 => Some("NOPERM"),
@@ -231,18 +233,64 @@ fn status_signal_name(signal: SignalNumber) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use ansi_term::Color;
+    use nu_ansi_term::{Color, Style};
 
     use crate::test::ModuleRenderer;
 
     #[test]
-    fn success_status() {
+    fn success_status_success_symbol_empty() {
         let expected = None;
+
+        // Status code 0 and success_symbol = ""
+        let actual = ModuleRenderer::new("status")
+            .config(toml::toml! {
+                [status]
+                success_symbol = ""
+                disabled = false
+            })
+            .status(0)
+            .collect();
+        assert_eq!(expected, actual);
+
+        // Status code 0 and success_symbol is missing
+        let actual = ModuleRenderer::new("status")
+            .config(toml::toml! {
+                [status]
+                disabled = false
+            })
+            .status(0)
+            .collect();
+        assert_eq!(expected, actual);
+
+        // No status code and success_symbol = ""
+        let actual = ModuleRenderer::new("status")
+            .config(toml::toml! {
+                [status]
+                success_symbol = ""
+                disabled = false
+            })
+            .collect();
+        assert_eq!(expected, actual);
+
+        // No status code and success_symbol is missing
+        let actual = ModuleRenderer::new("status")
+            .config(toml::toml! {
+                [status]
+                disabled = false
+            })
+            .collect();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn success_status_success_symbol_filled() {
+        let expected = Some(format!("{} ", Color::Red.bold().paint("✔️0")));
 
         // Status code 0
         let actual = ModuleRenderer::new("status")
             .config(toml::toml! {
                 [status]
+                success_symbol = "✔️"
                 disabled = false
             })
             .status(0)
@@ -253,6 +301,7 @@ mod tests {
         let actual = ModuleRenderer::new("status")
             .config(toml::toml! {
                 [status]
+                success_symbol = "✔️"
                 disabled = false
             })
             .collect();
@@ -274,12 +323,33 @@ mod tests {
         for status in &exit_values {
             let expected = Some(format!(
                 "{} ",
-                Color::Red.bold().paint(format!("✖{}", status))
+                Color::Red.bold().paint(format!("❌{status}"))
             ));
             let actual = ModuleRenderer::new("status")
                 .config(toml::toml! {
                     [status]
-                    symbol = "✖"
+                    symbol = "❌"
+                    disabled = false
+                })
+                .status(*status)
+                .collect();
+            assert_eq!(expected, actual);
+        }
+    }
+
+    #[test]
+    fn failure_plaintext_status() {
+        let exit_values = [1, 2, 130];
+
+        for status in &exit_values {
+            let expected = Some(format!(
+                "{} ",
+                Color::Red.bold().paint(format!("x {status}"))
+            ));
+            let actual = ModuleRenderer::new("status")
+                .config(toml::toml! {
+                    [status]
+                    symbol = "[x](bold red) "
                     disabled = false
                 })
                 .status(*status)
@@ -290,18 +360,18 @@ mod tests {
 
     #[test]
     fn failure_hex_status() {
-        let exit_values = [1, 2, 130, -2147467260];
-        let string_values = ["0x1", "0x2", "0x82", "0x80004004"];
+        let exit_values = [1, 2, 130, -2_147_467_260, 2_147_500_036];
+        let string_values = ["0x1", "0x2", "0x82", "0x80004004", "0x80004004"];
 
         for (exit_value, string_value) in exit_values.iter().zip(string_values) {
             let expected = Some(format!(
                 "{} ",
-                Color::Red.bold().paint(format!("✖{}", string_value))
+                Color::Red.bold().paint(format!("❌{string_value}"))
             ));
             let actual = ModuleRenderer::new("status")
                 .config(toml::toml! {
                     [status]
-                    symbol = "✖"
+                    symbol = "❌"
                     disabled = false
                     format = "[${symbol}${hex_status}]($style) "
                 })
@@ -644,5 +714,60 @@ mod tests {
                 .collect();
             assert_eq!(expected, actual);
         }
+    }
+
+    #[test]
+    fn pipestatus_segment_format() {
+        let pipe_exit_code = &[0, 1];
+        let main_exit_code = 1;
+
+        let expected = Some("[0]|[1] => <1>".to_string());
+        let actual = ModuleRenderer::new("status")
+            .config(toml::toml! {
+                [status]
+                format = "\\($status\\)"
+                pipestatus = true
+                pipestatus_separator = "|"
+                pipestatus_format = "$pipestatus => <$status>"
+                pipestatus_segment_format = "\\[$status\\]"
+                disabled = false
+            })
+            .status(main_exit_code)
+            .pipestatus(pipe_exit_code)
+            .collect();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn pipestatus_separator_format() {
+        let pipe_exit_code = &[0, 1, 2];
+        let main_exit_code = 2;
+
+        let expected_style = Style::new().on(Color::Red).fg(Color::White).bold();
+        let expected = Some(format!(
+            "{}{}{}{}{}{}{}",
+            expected_style.paint("["),
+            expected_style.paint("0"),
+            expected_style.paint("|"),
+            expected_style.paint("1"),
+            expected_style.paint("|"),
+            expected_style.paint("2"),
+            expected_style.paint("] => <2>"),
+        ));
+        let actual = ModuleRenderer::new("status")
+            .config(toml::toml! {
+                [status]
+                format = "\\($status\\)"
+                style = "fg:white bg:red bold"
+                pipestatus = true
+                pipestatus_separator = "[|]($style)"
+                pipestatus_format = "[\\[]($style)$pipestatus[\\] => <$status>]($style)"
+                pipestatus_segment_format = "[$status]($style)"
+                disabled = false
+            })
+            .status(main_exit_code)
+            .pipestatus(pipe_exit_code)
+            .collect();
+        assert_eq!(expected, actual);
     }
 }

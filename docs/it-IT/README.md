@@ -10,15 +10,15 @@ features:
     title: Prima la compatibilità
     details: Funziona sulle shell e sui sistemi operativi più comuni. Usalo ovunque!
   - 
-    title: Generato in Rust
-    details: Sfrutta la velocità e sicurezza migliori di Rust, per rendere il tuo prompt il più veloce e il più affidabile.
+    title: Scritto in Rust
+    details: Sfrutta la velocità e sicurezza di Rust, per rendere il tuo prompt il più veloce e il più affidabile.
   - 
     title: Personalizzabile
-    details: Ogni più piccolo dettaglio è personalizzabile a piacere, per rendere questo messaggio prompt minimalista o ricco delle funzionalità che desideri.
+    details: Ogni più piccolo dettaglio è personalizzabile a piacere, per rendere questo prompt minimalista o ricco di tutte le funzionalità che desideri.
 footer: Licenza ISC | Copyright © 2019-present Starship Collaboratori
 #Used for the description meta tag, for SEO
 metaTitle: "Starship: Cross-Shell Prompt"
-description: Starship è il prompt minimalista, super veloce ed estremamente personalizzabile per qualsiasi shell! Mostra le informazioni di cui hai bisogno, rimanendo elegante e minimale. Installazione rapida disponibile per Bash, Fish, ZSH, Ion, Tcsh, Elvish, Nu, Xonsh e PowerShell.
+description: Starship è il prompt minimalista, super veloce ed estremamente personalizzabile per qualsiasi shell! Mostra le informazioni di cui hai bisogno, rimanendo elegante e minimale. Quick installation available for Bash, Fish, ZSH, Ion, Tcsh, Elvish, Nu, Xonsh, Cmd, and PowerShell.
 ---
 
 <div class="center">
@@ -42,23 +42,23 @@ description: Starship è il prompt minimalista, super veloce ed estremamente per
    Con Shell:
 
    ```sh
-   sh -c "$(curl -fsSL https://starship.rs/install.sh)"
+   curl -sS https://starship.rs/install.sh | sh
    ```
+
    Per aggiornare Starship stesso, riavviare lo script sopra. Sostituirà la versione corrente senza toccare la configurazione di Starship.
 
 
-   #### Installa con Package Manager
+   #### Installa via Package Manager
 
    Con [Homebrew](https://brew.sh/):
 
    ```sh
    brew install starship
    ```
-
-   Con [Scoop](https://scoop.sh):
+   With [Winget](https://github.com/microsoft/winget-cli):
 
    ```powershell
-   scoop install starship
+   winget install starship
    ```
 
 1. Aggiungi lo script di inizializzazione al file di configurazione della shell:
@@ -99,7 +99,7 @@ description: Starship è il prompt minimalista, super veloce ed estremamente per
 
    #### Powershell
 
-   Aggiungi quanto segue alla fine di `Microsoft.PowerShell_profile.ps1`. Puoi controllare la posizione di questo file interrogando la variabile `$PROFILE` in PowerShell. In genere il percorso è `~\Documents\PowerShell\Microsoft.PowerShell_profile.ps1` oppure `~/.config/powershell/Microsoft.PowerShell_profile.ps1` in -Nix.
+   Aggiungi quanto segue alla fine di `Microsoft.PowerShell_profile.ps1`. Puoi controllare la posizione di questo file interrogando la variabile `$PROFILE` in PowerShell. Tipicamente il percorso è `~\Documents\PowerShell\Microsoft.PowerShell_profile.ps1` oppure `~/.config/powershell/Microsoft.PowerShell_profile.ps1` su -Nix.
 
    ```sh
    Invoke-Expression (&starship init powershell)
@@ -119,7 +119,11 @@ description: Starship è il prompt minimalista, super veloce ed estremamente per
 
    #### Elvish
 
-   ::: warning È supportato solo elvish v0.15 o superiore. :::
+   ::: warning
+
+   Only elvish v0.18 or higher is supported.
+
+   :::
 
    Aggiungi quanto segue alla fine di `~/.elvish/rc.elv`:
 
@@ -143,15 +147,22 @@ description: Starship è il prompt minimalista, super veloce ed estremamente per
 
    #### Nushell
 
-   ::: warning Questo cambierà in futuro. È supportata solo la versione v0.33 o superiore. ::: Aggiungi quanto segue al tuo file di configurazione nu. Puoi controllare la posizione di questo file eseguendo `percorso di configurazione` in nu.
+   ::: warning
 
-   ```toml
-   startup = [
-    "mkdir ~/.cache/starship",
-    "starship init nu | save ~/.cache/starship/init.nu",
-    "source ~/.cache/starship/init.nu"
-   ]
-   prompt = "starship_prompt"
+   This will change in the future. Only Nushell v0.78+ is supported.
+
+   :::
+
+   Add the following to the end of your Nushell env file (find it by running `$nu.env-path` in Nushell):
+   ```sh
+   mkdir ~/.cache/starship
+   starship init nu | save -f ~/.cache/starship/init.nu
+   ```
+
+   And add the following to the end of your Nushell configuration (find it by running `$nu.config-path`):
+
+   ```sh
+   use ~/.cache/starship/init.nu
    ```
 
 
@@ -163,4 +174,15 @@ description: Starship è il prompt minimalista, super veloce ed estremamente per
    # ~/.xonshrc
 
    execx($(starship init xonsh))
+   ```
+
+
+   #### Cmd
+
+   You need to use [Clink](https://chrisant996.github.io/clink/clink.html) (v1.2.30+) with Cmd. Add the following to a file `starship.lua` and place this file in Clink scripts directory:
+
+   ```lua
+   -- starship.lua
+
+   load(io.popen('starship init cmd'):read("*a"))()
    ```
